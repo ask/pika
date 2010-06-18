@@ -48,33 +48,49 @@
 
 import sys
 
-class EventHandlerError(Exception): pass
+from UserDict import UserDict
 
-class Event:
-    def __init__(self, report_failures = False):
-        self.handlers = {}
+class EventHandlerError(Exception):
+    pass
+
+class Event(UserDict):
+
+    def __init__(self, report_failures=False):
+        self.data = {}
         self.report_failures = report_failures
 
-    def addHandler(self, handler, key = None):
+    def add(self, handler, key=None):
         if key is None:
             key = handler
-        self.handlers[key] = handler
+        self[key] = handler
+
+    def remove(self, key):
+        self.pop(key, None)
+
+    def addHandler(self, handler, key=None):
+        # compat
+        return self.add(handler, key)
 
     def delHandler(self, key):
-        self.handlers.pop(key, None)
+        # compat
+        self.remove(key)
 
     def fire(self, *args, **kwargs):
         results = {}
         errors = {}
-        for key in self.handlers:
+        for key, handler in self.items():
             try:
-                results[key] = self.handlers[key](*args, **kwargs)
-            except:
+                results[key] = handler(*args, **kwargs)
+            except Exception, exc:
                 errors[key] = sys.exc_info()
 
         if self.report_failures:
             return (results, errors)
         elif errors:
-            raise EventHandlerError(errors)
+            raise exceptions.EventHandlerError(errors)
         else:
             return results
+
+    @property
+    def handlers(self):
+        return self.data
