@@ -48,35 +48,37 @@
 
 import random
 
-import pika.spec as spec
-import pika.codec as codec
-import pika.channel as channel
-import pika.simplebuffer as simplebuffer
-import pika.event as event
+from pika import spec
+from pika import codec
+from pika import channel
+from pika import simplebuffer
+from pika imort event
 from pika.specbase import _codec_repr
-from pika.exceptions import *
+from pika import exceptions
 
-class PlainCredentials:
+class PlainCredentials(object):
+
     def __init__(self, username, password):
         self.username = username
         self.password = password
 
     def response_for(self, start):
         if 'PLAIN' not in start.mechanisms.split():
-            return None
+            return
         return ('PLAIN', '\0%s\0%s' % (self.username, self.password))
 
 default_credentials = PlainCredentials('guest', 'guest')
 
-class ConnectionParameters:
+class ConnectionParameters(object):
+
     def __init__(self,
                  host,
-                 port = None,
-                 virtual_host = "/",
-                 credentials = None,
-                 channel_max = 0,
-                 frame_max = 131072,
-                 heartbeat = 0):
+                 port=None,
+                 virtual_host="/",
+                 credentials=None,
+                 channel_max=0,
+                 frame_max=131072,
+                 heartbeat=0):
         self.host = host
         self.port = port
         self.virtual_host = virtual_host
@@ -88,8 +90,10 @@ class ConnectionParameters:
     def __repr__(self):
         return _codec_repr(self, lambda: ConnectionParameters(None))
 
-class SimpleReconnectionStrategy:
-    def __init__(self, initial_retry_delay = 1.0, multiplier = 2.0, max_delay = 30.0, jitter = 0.5):
+class SimpleReconnectionStrategy(object):
+
+    def __init__(self, initial_retry_delay=1.0, multiplier=2.0,
+            max_delay=30.0, jitter=0.5):
         self.initial_retry_delay = initial_retry_delay
         self.multiplier = multiplier
         self.max_delay = max_delay
@@ -106,32 +110,36 @@ class SimpleReconnectionStrategy:
         return True
 
     def on_connect_attempt(self, conn):
-        #print 'ATTEMPT', conn.parameters
-        self.attempts_since_last_success = self.attempts_since_last_success + 1
+        #print('ATTEMPT', conn.parameters)
+        self.attempts_since_last_success += 1
 
     def on_connect_attempt_failure(self, conn):
-        #print 'ATTEMPTFAILED', conn.parameters
+        #print('ATTEMPTFAILED', conn.parameters)
         pass
 
     def on_transport_connected(self, conn):
-        #print 'TXCONNECTED', conn.parameters
+        #print('TXCONNECTED', conn.parameters)
         pass
 
     def on_transport_disconnected(self, conn):
-        #print "TXDISCONNECTED", conn.parameters, self.attempts_since_last_success
+        #print("TXDISCONNECTED", conn.parameters,
+        #      self.attempts_since_last_success)
         pass
 
     def on_connection_open(self, conn):
-        #print 'CONNECTED', conn.parameters
+        #print('CONNECTED', conn.parameters)
         self._reset()
 
     def on_connection_closed(self, conn):
         t = self.current_delay * ((random.random() * self.jitter) + 1)
-        #print "RETRYING %r IN %r SECONDS (%r attempts)" % (conn.parameters, t, self.attempts_since_last_success)
-        self.current_delay = min(self.max_delay, self.current_delay * self.multiplier)
+        #print("RETRYING %r IN %r SECONDS (%r attempts)" % (
+        #   conn.parameters, t, self.attempts_since_last_success))
+        self.current_delay = min(self.max_delay,
+                                 self.current_delay * self.multiplier)
         conn.delayed_call(t, conn.reconnect)
 
-class NullReconnectionStrategy:
+class NullReconnectionStrategy(object):
+
     def can_reconnect(self): return False
     def on_connect_attempt(self, conn): pass
     def on_connect_attempt_failure(self, conn): pass
@@ -140,8 +148,11 @@ class NullReconnectionStrategy:
     def on_connection_open(self, conn): pass
     def on_connection_closed(self, conn): pass
 
-class Connection:
-    def __init__(self, parameters, wait_for_open = True, reconnection_strategy = None):
+class Connection(object):
+    client_properties = {"product": "Pika Python AMQP Client Library"}
+
+    def __init__(self, parameters, wait_for_open=True,
+            reconnection_strategy=None):
         self.parameters = parameters
         self.reconnection_strategy = reconnection_strategy or NullReconnectionStrategy()
 
@@ -177,9 +188,10 @@ class Connection:
         self.reconnection_strategy.on_connect_attempt(self)
         self._reset_per_connection_state()
         try:
-            self.connect(self.parameters.host, self.parameters.port or spec.PORT)
+            self.connect(self.parameters.host,
+                         self.parameters.port or spec.PORT)
             self.send_frame(self._local_protocol_header())
-        except:
+        except Exception, exc:
             self.reconnection_strategy.on_connect_attempt_failure(self)
             raise
 
@@ -223,13 +235,13 @@ class Connection:
             self.connection_open = False
             self.handle_connection_close()
 
-    def close(self, code = 200, text = 'Normal shutdown'):
+    def close(self, code=200, text='Normal shutdown'):
         if self.connection_open:
             self.connection_open = False
-            c = spec.Connection.Close(reply_code = code,
-                                      reply_text = text,
-                                      class_id = 0,
-                                      method_id = 0)
+            c = spec.Connection.Close(reply_code=code,
+                                      reply_text=text,
+                                      class_id=0,
+                                      method_id=0)
             self._rpc(0, c, [spec.Connection.CloseOk])
             self._set_connection_close(c)
         self._disconnect_transport()
@@ -238,7 +250,7 @@ class Connection:
         if self.is_alive():
             self.close()
 
-    def _disconnect_transport(self, reason = None):
+    def _disconnect_transport(self, reason=None):
         self.disconnect_transport()
         self.on_disconnected(reason)
 
@@ -247,17 +259,15 @@ class Connection:
         transport (socket) to close."""
         raise NotImplementedError('Subclass Responsibility')
 
-    def on_disconnected(self, reason = 'Socket closed'):
-        self._set_connection_close(spec.Connection.Close(reply_code = 0,
-                                                         reply_text = reason,
-                                                         class_id = 0,
-                                                         method_id = 0))
+    def on_disconnected(self, reason='Socket closed'):
+        self._set_connection_close(spec.Connection.Close(reply_code=0,
+                                                         reply_text=reason,
+                                                         class_id=0,
+                                                         method_id=0))
         self.reconnection_strategy.on_transport_disconnected(self)
 
     def suggested_buffer_size(self):
-        b = self.state.frame_max
-        if not b: b = 131072
-        return b
+        return self.state.frame_max or 131072
 
     def on_data_available(self, buf):
         while buf:
@@ -272,11 +282,11 @@ class Connection:
         limit = self.state.channel_max or 32767
         while self.next_channel in self.channels:
             self.next_channel = (self.next_channel + 1) % limit
-            tries = tries + 1
+            tries += 1
             if self.next_channel == 0:
                 self.next_channel = 1
             if tries > limit:
-                raise NoFreeChannels()
+                raise exceptions.NoFreeChannels()
         return self.next_channel
 
     def _set_channel(self, channel_number, channel):
@@ -284,20 +294,20 @@ class Connection:
 
     def _ensure_channel(self, channel_number):
         if self.connection_close:
-            raise ConnectionClosed(self.connection_close)
+            raise exceptions.ConnectionClosed(self.connection_close)
         return self.channels[channel_number]._ensure()
 
     def reset_channel(self, channel_number):
         if channel_number in self.channels:
-            del self.channels[channel_number]
+            del(self.channels[channel_number])
 
     def send_frame(self, frame):
         marshalled_frame = frame.marshal()
         self.bytes_sent = self.bytes_sent + len(marshalled_frame)
         self.outbound_buffer.write(marshalled_frame)
-        #print 'Wrote %r' % (frame, )
+        #print('Wrote %r' % (frame, ))
 
-    def send_method(self, channel_number, method, content = None):
+    def send_method(self, channel_number, method, content=None):
         self.send_frame(codec.FrameMethod(channel_number, method))
         props = None
         body = None
@@ -308,16 +318,17 @@ class Connection:
             body = content
         if props:
             length = 0
-            if body: length = len(body)
+            if body:
+                length = len(body)
             self.send_frame(codec.FrameHeader(channel_number, length, props))
         if body:
-            maxpiece = (self.state.frame_max - \
-                        codec.ConnectionState.HEADER_SIZE - \
+            maxpiece = (self.state.frame_max -
+                        codec.ConnectionState.HEADER_SIZE -
                         codec.ConnectionState.FOOTER_SIZE)
-            body_buf = simplebuffer.SimpleBuffer( body )
+            body_buf = simplebuffer.SimpleBuffer(body)
             while body_buf:
                 piecelen = min(len(body_buf), maxpiece)
-                piece = body_buf.read_and_consume( piecelen )
+                piece = body_buf.read_and_consume(piecelen)
                 self.send_frame(codec.FrameBody(channel_number, piece))
 
     def _rpc(self, channel_number, method, acceptable_replies):
@@ -327,24 +338,26 @@ class Connection:
 
     def _login1(self, frame):
         if isinstance(frame, codec.FrameProtocolHeader):
-            raise ProtocolVersionMismatch(self._local_protocol_header(),
-                                          frame)
+            raise exceptions.ProtocolVersionMismatch(
+                    self._local_protocol_header(), frame)
 
-        if (frame.method.version_major, frame.method.version_minor) != spec.PROTOCOL_VERSION:
-            raise ProtocolVersionMismatch(self._local_protocol_header(),
-                                          frame)
+        if (frame.method.version_major, frame.method.version_minor) != \
+                spec.PROTOCOL_VERSION:
+            raise exceptions.ProtocolVersionMismatch(
+                    self._local_protocol_header(), frame)
 
         self.server_properties = frame.method.server_properties
 
         credentials = self.parameters.credentials or default_credentials
         response = credentials.response_for(frame.method)
         if not response:
-            raise LoginError("No acceptable SASL mechanism for the given credentials",
-                             credentials)
-        self.send_method(0, spec.Connection.StartOk(client_properties = \
-                                                      {"product": "Pika Python AMQP Client Library"},
-                                                    mechanism = response[0],
-                                                    response = response[1]))
+            raise exceptions.LoginError(
+                "No acceptable SASL mechanism for the given credentials",
+                credentials)
+        self.send_method(0, spec.Connection.StartOk(
+                                client_properties=self.client_properties,
+                                mechanism=response[0],
+                                response=response[1]))
         self.erase_credentials()
         self.frame_handler = self._login2
 
@@ -354,23 +367,24 @@ class Connection:
         pass
 
     def _login2(self, frame):
-        channel_max = combine_tuning(self.parameters.channel_max, frame.method.channel_max)
-        frame_max = combine_tuning(self.parameters.frame_max, frame.method.frame_max)
-        heartbeat = combine_tuning(self.parameters.heartbeat, frame.method.heartbeat)
+        channel_max = combine_tuning(self.parameters.channel_max,
+                                     frame.method.channel_max)
+        frame_max = combine_tuning(self.parameters.frame_max,
+                                   frame.method.frame_max)
+        heartbeat = combine_tuning(self.parameters.heartbeat,
+                                   frame.method.heartbeat)
         if heartbeat:
             self.heartbeat_checker = HeartbeatChecker(self, heartbeat)
         self.state.tune(channel_max, frame_max)
-        self.send_method(0, spec.Connection.TuneOk(
-            channel_max = channel_max,
-            frame_max = frame_max,
-            heartbeat = heartbeat))
+        self.send_method(0, spec.Connection.TuneOk(channel_max=channel_max,
+                                                   frame_max=frame_max,
+                                                   heartbeat=heartbeat))
         self.frame_handler = self._generic_frame_handler
         self._install_channel0()
-        self.known_hosts = \
-                         self._rpc(0, spec.Connection.Open(virtual_host = \
-                                                               self.parameters.virtual_host,
-                                                           insist = True),
-                                   [spec.Connection.OpenOk]).known_hosts
+        self.known_hosts = self._rpc(0, spec.Connection.Open(
+                    virtual_host=self.parameters.virtual_host,
+                    insist=True),
+                [spec.Connection.OpenOk]).known_hosts
         self.connection_open = True
         self.handle_connection_open()
 
@@ -386,7 +400,8 @@ class Connection:
 
     def wait_for_open(self):
         while (not self.connection_open) and \
-                (self.reconnection_strategy.can_reconnect() or (not self.connection_close)):
+                (self.reconnection_strategy.can_reconnect() or \
+                (not self.connection_close)):
             self.drain_events()
 
     def drain_events(self, timeout=None):
@@ -402,18 +417,22 @@ class Connection:
         self._set_connection_close(method_frame.method)
 
     def _generic_frame_handler(self, frame):
-        #print "GENERIC_FRAME_HANDLER", frame
+        #print("GENERIC_FRAME_HANDLER", frame)
         if isinstance(frame, codec.FrameHeartbeat):
-            pass # we already counted the received bytes for our heartbeat checker
+            # we already counted the received bytes for our heartbeat checker
+            pass
         else:
             self.channels[frame.channel_number].frame_handler(frame)
 
 def combine_tuning(a, b):
-    if a == 0: return b
-    if b == 0: return a
+    if a == 0:
+        return b
+    if b == 0:
+        return a
     return min(a, b)
 
-class HeartbeatChecker:
+class HeartbeatChecker(object):
+
     def __init__(self, connection, heartbeat_interval_sec):
         self.previous_sent = 0
         self.previous_received = 0
@@ -423,7 +442,8 @@ class HeartbeatChecker:
         self.setup_timer()
 
     def setup_timer(self):
-        self.connection.delayed_call(self.heartbeat_interval_sec, self.check_heartbeats)
+        self.connection.delayed_call(self.heartbeat_interval_sec,
+                                     self.check_heartbeats)
 
     def check_heartbeats(self):
         if self.previous_sent == self.connection.bytes_sent:
@@ -431,7 +451,8 @@ class HeartbeatChecker:
             self.connection.send_frame(codec.FrameHeartbeat())
 
         if self.previous_received == self.connection.bytes_received:
-            # The server has been silent a wee while. Bump our missed-heartbeat-counter.
+            # The server has been silent a wee while.
+            # Bump our missed-heartbeat-counter.
             self.missed_heartbeat_count = self.missed_heartbeat_count + 1
         else:
             # The server has said something. Reset our count.
